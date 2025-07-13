@@ -1,24 +1,22 @@
 #include "MessagesBlock.h"
-#include <iostream>
 #include <stdexcept>
 
-using namespace std;
+// ========== Queue Methods ==========
 
-// ==================== MÉTODOS DE Queue ====================
 void MessagesBlock::Queue::start() {
     front = -1;
     back = -1;
 }
 
-bool MessagesBlock::Queue::full() {
+bool MessagesBlock::Queue::full() const {
     return ((back + 1) % MAX_MESSAGES == front);
 }
 
-bool MessagesBlock::Queue::empty() {
+bool MessagesBlock::Queue::empty() const {
     return (front == -1);
 }
 
-void MessagesBlock::Queue::enqueue(Message x) {
+void MessagesBlock::Queue::enqueue(const StringMessage& x) {
     if (full()) dequeue();
 
     if (empty()) {
@@ -30,53 +28,55 @@ void MessagesBlock::Queue::enqueue(Message x) {
 }
 
 void MessagesBlock::Queue::dequeue() {
-    if (empty()) {
-        cout << "The queue is empty" << endl;
-    } else if (front == back) {
-        front = -1;
-        back = -1;
+    if (empty()) return;
+
+    if (front == back) {
+        front = back = -1;
     } else {
         front = (front + 1) % MAX_MESSAGES;
     }
 }
 
-MessagesBlock::Message MessagesBlock::Queue::get_last() {
-    if (empty()) {
-        throw runtime_error("Queue is empty, cannot retrieve last message.");
-    }
+MessagesBlock::StringMessage MessagesBlock::Queue::get_last() const {
+    if (empty()) throw std::runtime_error("Queue is empty");
     return queue[back];
 }
 
-int MessagesBlock::Queue::size() {
+int MessagesBlock::Queue::size() const {
     if (empty()) return 0;
     if (back >= front) return back - front + 1;
     return MAX_MESSAGES - front + back + 1;
 }
 
-MessagesBlock::Message MessagesBlock::Queue::get_at(int index) {
-    if (empty() || index < 0 || index >= size()) {
-        throw out_of_range("Invalid index");
-    }
+MessagesBlock::StringMessage MessagesBlock::Queue::get_at(int index) const {
+    if (empty() || index < 0 || index >= size())
+        throw std::out_of_range("Invalid index");
     return queue[(front + index) % MAX_MESSAGES];
 }
 
-// ==================== MÉTODOS DE MessagesBlock ====================
-MessagesBlock::Message MessagesBlock::getMessageFrom(string env) {
-    int sz = messageQueue.size();
+// ========== MessagesBlock Methods ==========
 
-    for (int i = sz - 1; i >= 0; i--) {
-        Message m = messageQueue.get_at(i);
-        if (m.envoy == env) {
-            return m;
-        }
-    }
-    throw runtime_error("No message found from the specified sender.");
-}
-
-void MessagesBlock::addMessage(Message msg) {
+void MessagesBlock::addMessage(const StringMessage& msg) {
     messageQueue.enqueue(msg);
 }
 
-MessagesBlock::Message MessagesBlock::getHistoryMessage(int index) {
+MessagesBlock::StringMessage MessagesBlock::getMessageFrom(const std::string& env) const {
+    int sz = messageQueue.size();
+    for (int i = sz - 1; i >= 0; --i) {
+        StringMessage m = messageQueue.get_at(i);
+        if (m.envoy == env) return m;
+    }
+    throw std::runtime_error("No message from specified sender.");
+}
+
+MessagesBlock::StringMessage MessagesBlock::getHistoryMessage(int index) const {
     return messageQueue.get_at(index);
+}
+
+MessagesBlock::Queue& MessagesBlock::getQueue() {
+    return messageQueue;
+}
+
+const MessagesBlock::Queue& MessagesBlock::getQueue() const {
+    return messageQueue;
 }

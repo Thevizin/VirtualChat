@@ -1,5 +1,5 @@
 #include <iostream>
-#include "Utils/MessagesBlock.h"
+#include "../Utils/MessagesBlock.h"
 #include <windows.h>
 
 using namespace std;
@@ -23,20 +23,20 @@ int main() {
     bloco.getQueue().start();
 
     // Adiciona mensagens
-    bloco.addMessage({10, 1, "DestinoA", "Vinicius", "Olá!"});
+    bloco.addMessage({10, 1, "DestinoA", "Vinicius", "Ola!"});
     bloco.addMessage({15, 1, "DestinoB", "Lucas", "Oi!"});
     bloco.addMessage({20, 1, "DestinoA", "Vinicius", "Como vai?"});
 
     // Pega a última mensagem de "Vinicius"
     try {
         auto ultima = bloco.getMessageFrom("Vinicius");
-        cout << "\nÚltima mensagem de Vinicius: " << ultima.content << endl;
+        cout << "\nUltima mensagem de Vinicius: " << ultima.content << endl;
     } catch (exception& e) {
         cout << "Erro: " << e.what() << endl;
     }
 
     // Exibe histórico completo
-    cout << "\nHistórico completo:\n";
+    cout << "\nHistorico completo:\n";
     handle_messages(bloco);
 
     return 0;
