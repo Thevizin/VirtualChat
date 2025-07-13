@@ -1,88 +1,42 @@
 #include <iostream>
-#include <string>
-#include <queue>
+#include "Utils/MessagesBlock.h"
+
 using namespace std;
 
-const int MAX_MESSAGES = 100;
+MessagesBlock GlobalMessages[MAX_MESSAGES];
 
+void handle_messages(MessagesBlock& block) {
+    // Exemplo: pegar todas as mensagens e imprimir
+    int total = block.getQueue().size();
+    for (int i = 0; i < total; ++i) {
+        auto msg = block.getHistoryMessage(i);
+        cout << "[" << i << "] " << msg.envoy << " -> " << msg.destination
+             << ": " << msg.content << endl;
+    }
+}
 
-class MessagesBlock{
-    struct Message{
-        int size;
-        int type;
-        string destination;
-        string envoy;
-    };
+int main() {
+    cout << "Iniciando...\n";
 
-    struct Queue{
-        int front, size;
-        int queue[MAX_MESSAGES];
+    MessagesBlock& bloco = GlobalMessages[0];
+    bloco.getQueue().start();
 
-        bool empty(Queue &queue){
-            return(queue.size == 0);
-        }
+    // Adiciona mensagens
+    bloco.addMessage({10, 1, "DestinoA", "Vinicius", "Olá!"});
+    bloco.addMessage({15, 1, "DestinoB", "Lucas", "Oi!"});
+    bloco.addMessage({20, 1, "DestinoA", "Vinicius", "Como vai?"});
 
-        bool full(Queue &queue){
-            return(queue.size == MAX_MESSAGES);
-        }
-
-        void start(Queue &queue){
-            queue.size = queue.front = 0;
-        }
-
-        void enqueue(Queue &queue, int valor){
-            if(full(queue)){
-                cout << "The queue is full" << endl;
-            }
-            else if(empty(queue)){
-                queue.front = 0;
-                queue.queue[(queue.size + queue.front) % MAX_MESSAGES] = valor;
-                queue.size ++;
-                cout << valor << " Added" << endl;
-            }
-            else{
-                queue.queue[(queue.size + queue.front) % MAX_MESSAGES] = valor;
-                queue.size ++;
-            }
-        }
-
-        void dequeue(Queue &queue){
-            if(empty(queue)) cout << "The queue is empty" << endl;
-            else{
-                cout << queue.queue[queue.front] << " Removed" << endl; 
-                queue.front = (queue.front + 1) % MAX_MESSAGES;
-                queue.size --;
-            }
-        }
-
-    };
-    
-    // FYI: when we consider the type variable, we are considering the type of the message
-    // It can be: A name definition (0), a standard message (1), a file message (2) or a instruction message (3)
-
-    Message GlobalMessages[MAX_MESSAGES];
-
-
-    public:
-
-
-
-    Message returnLastMessage(string dest, string env){
-        string message;
-        for 
-
+    // Pega a última mensagem de "Vinicius"
+    try {
+        auto ultima = bloco.getMessageFrom("Vinicius");
+        cout << "\nÚltima mensagem de Vinicius: " << ultima.content << endl;
+    } catch (exception& e) {
+        cout << "Erro: " << e.what() << endl;
     }
 
-};
+    // Exibe histórico completo
+    cout << "\nHistórico completo:\n";
+    handle_messages(bloco);
 
-MessagesBlock GlobalMessages[MAX_MESSAGES]
-
-
-void handle_messages(MessagesBlock block){}
-
-
-
-
-int main(){
-    cout << "ola";
+    return 0;
 }
