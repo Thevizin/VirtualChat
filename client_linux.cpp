@@ -1,0 +1,96 @@
+#include <iostream>
+#include <string>
+#include <thread>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+
+using namespace std;
+
+bool running = true;
+
+void receive_messages(int sock) {
+    char buffer[1024];
+    int bytes_received;
+    while (running) {
+        bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+        if (bytes_received > 0) {
+            buffer[bytes_received] = '\0';
+            cout << "\n" << buffer << "\n> " << flush;
+        } else if (bytes_received == 0) {
+            cout << "\nConexão encerrada pelo servidor.\n";
+            running = false;
+            break;
+        } else if (bytes_received < 0) {
+            cout << "\nErro na conexão: " << strerror(errno) << "\n";
+            running = false;
+            break;
+        }
+    }
+}
+
+void show_help() {
+    cout << "\n========== COMANDOS DISPONÍVEIS ==========\n";
+    cout << "- Digite normalmente: mensagem para todos\n";
+    cout << "- /private [nome] [mensagem]: mensagem privada\n";
+    cout << "- /list: listar usuários conectados\n";
+    cout << "- /help: mostrar esta ajuda\n";
+    cout << "- /quit: sair do chat\n";
+    cout << "==========================================\n";
+}
+
+int main() {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        cerr << "Erro ao criar socket: " << strerror(errno) << endl;
+        return 1;
+    }
+
+    sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(8080);
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    if (connect(sock, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        cerr << "Erro ao conectar ao servidor: " << strerror(errno) << endl;
+        close(sock);
+        return 1;
+    }
+
+    cout << "Conectado ao servidor!\n";
+    
+    thread(receive_messages, sock).detach();
+    
+    show_help();
+
+    string input;
+    while (running) {
+        cout << "> ";
+        getline(cin, input);
+        
+        if (input == "/help") {
+            show_help();
+            continue;
+        }
+        
+        if (input == "/quit") {
+            running = false;
+            break;
+        }
+        
+        if (input.empty()) {
+            continue;
+        }
+
+        if (send(sock, input.c_str(), input.size(), 0) < 0) {
+            cerr << "Erro ao enviar mensagem: " << strerror(errno) << endl;
+            break;
+        }
+    }
+
+    close(sock);
+    return 0;
+}
