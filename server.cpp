@@ -1,16 +1,12 @@
 #include <iostream>
 #include <string>
-#include <vector>
 #include <thread>
-#include <mutex>
 #include <algorithm>
+#include <mutex>
 #include <unordered_map>
-#include <sstream>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include "Utils/MessagesBlock.h"
-#include "Utils/Message.h"
-#include "Utils/ConnectionsBlock.h"
+#include "Utils/ServerBlock.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -19,29 +15,14 @@ using namespace std;
 #define PORT 8080
 #define BUFFER_SIZE 1024
 
-// Estrutura para conexões de clientes
-struct ClientConnection {
-    SOCKET socket;
-    string name;
-    // Histórico de mensagens privadas deste cliente
-    unordered_map<string, MessagesBlock> privateHistory;
-};
-
-// Lista de conexões
-vector<ClientConnection> connections;
-mutex connections_mutex;
-
-// Buffer de mensagens globais
-MessagesBlock GlobalMessages;
-
-// Bloco de conexões para busca por nome
-ConnectionsBlock connectionsBlock;
+// Mapa de servidores (público + privados)
+unordered_map<string, ServerBlock*> serverRooms;
+mutex serverRooms_mutex;
 
 // Inicializa o Winsock
 bool init_winsock() {
     WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    return (result == 0);
+    return (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0);
 }
 
 // Finaliza o Winsock
@@ -49,228 +30,171 @@ void cleanup_winsock() {
     WSACleanup();
 }
 
-// Envia mensagem para um cliente específico
-void send_message_to_user(ClientConnection &client, const string &msg) {
-    send(client.socket, msg.c_str(), (int)msg.size(), 0);
+// Busca (ou cria) sala
+ServerBlock* get_or_create_room(const string& name, bool isPrivate = false) {
+    lock_guard<mutex> lock(serverRooms_mutex);
+    auto it = serverRooms.find(name);
+    if (it != serverRooms.end())
+        return it->second;
+
+    ServerBlock* newRoom = new ServerBlock(isPrivate);
+    serverRooms[name] = newRoom;
+    cout << "Nova sala criada: " << name << " (" << (isPrivate ? "privada" : "pública") << ")" << endl;
+    return newRoom;
 }
 
-// Função para parsear comando de mensagem
-struct ParsedMessage {
-    string type;        // "all", "private"
-    string destination; // nome do usuário (para private)
-    string content;     // conteúdo da mensagem
-};
-
-ParsedMessage parse_message(const string &input) {
-    ParsedMessage parsed;
-    
-    if (input.substr(0, 8) == "/private") {
-        parsed.type = "private";
-        size_t space1 = input.find(' ', 8);
-        size_t space2 = input.find(' ', space1 + 1);
-        
-        if (space1 != string::npos && space2 != string::npos) {
-            parsed.destination = input.substr(space1 + 1, space2 - space1 - 1);
-            parsed.content = input.substr(space2 + 1);
-        } else {
-            parsed.type = "error";
-            parsed.content = "Formato incorreto. Use: /private [nome] [mensagem]";
-        }
-    } else if (input == "/list") {
-        parsed.type = "list";
-    } else {
-        parsed.type = "all";
-        parsed.content = input;
+// 👂 Thread de cliente
+void handle_client(SOCKET client_socket, sockaddr_in client_addr) {
+    // nome do usuário obtido no ServerBlock (por login, nickname etc)
+    string user_name = get_or_create_room("publico")->get_user_name(client_socket);
+    if (user_name.empty()) {
+        closesocket(client_socket);
+        return;
     }
-    
-    return parsed;
-}
 
-// Encontra cliente por nome
-ClientConnection* find_client_by_name(const string &name) {
-    lock_guard<mutex> lock(connections_mutex);
-    for (auto &conn : connections) {
-        if (conn.name == name) {
-            return &conn;
-        }
+    cout << "Novo cliente: " << user_name << endl;
+    ServerBlock* currentRoom = get_or_create_room("publico");
+    string currentRoomName = "publico";
+
+    {
+        lock_guard<mutex> lock(serverRooms_mutex);
+        currentRoom->add_client(client_socket, user_name);
     }
-    return nullptr;
-}
 
-// Encontra cliente por socket
-ClientConnection* find_client_by_socket(SOCKET socket) {
-    lock_guard<mutex> lock(connections_mutex);
-    for (auto &conn : connections) {
-        if (conn.socket == socket) {
-            return &conn;
-        }
-    }
-    return nullptr;
-}
-
-// Lista usuários conectados
-string list_connected_users() {
-    lock_guard<mutex> lock(connections_mutex);
-    stringstream ss;
-    ss << "Usuários conectados: ";
-    bool first = true;
-    for (const auto &conn : connections) {
-        if (!first) ss << ", ";
-        ss << conn.name;
-        first = false;
-    }
-    return ss.str();
-}
-
-// Thread para cada cliente
-void handle_client(ClientConnection client) {
     char buffer[BUFFER_SIZE];
-    int bytes_read;
 
-    // Envia mensagem de boas-vindas
-    string welcome_msg = "Bem-vindo, " + client.name + "!\n";
-    welcome_msg += "Comandos disponíveis:\n";
-    welcome_msg += "- Digite normalmente para enviar mensagem para todos\n";
-    welcome_msg += "- /private [nome] [mensagem] para enviar mensagem privada\n";
-    welcome_msg += "- /list para ver usuários conectados\n";
-    send_message_to_user(client, welcome_msg);
+    while (true) {
+        int bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
+        if (bytes_read <= 0) break;
 
-    while ((bytes_read = recv(client.socket, buffer, BUFFER_SIZE - 1, 0)) > 0) {
         buffer[bytes_read] = '\0';
         string input(buffer);
-        
-        // Remove quebras de linha
+
+        // limpa \n\r
         input.erase(remove(input.begin(), input.end(), '\n'), input.end());
         input.erase(remove(input.begin(), input.end(), '\r'), input.end());
 
-        ParsedMessage parsed = parse_message(input);
-        
-        if (parsed.type == "list") {
-            string user_list = list_connected_users();
-            send_message_to_user(client, user_list);
-            continue;
-        }
-        
-        if (parsed.type == "error") {
-            send_message_to_user(client, parsed.content);
-            continue;
-        }
+        // -------------------- COMANDOS --------------------
 
-        // Cria a mensagem
-        Message<string> msg;
-        msg.envoy = client.name;
-        msg.content = parsed.content;
-        msg.msg_type = "msg";
-        msg.destination = parsed.destination;
-
-        if (parsed.type == "all") {
-            msg.destination = "all";
-            GlobalMessages.addMessage(msg);
-
-            // Broadcast para todos os outros clientes
-            lock_guard<mutex> lock(connections_mutex);
-            for (auto &conn : connections) {
-                if (conn.socket != client.socket) {
-                    send_message_to_user(conn, "[GLOBAL] " + client.name + ": " + msg.content);
-                }
-            }
-        }
-        else if (parsed.type == "private") {
-            // Busca o destinatário
-            ClientConnection* target = find_client_by_name(parsed.destination);
-            
-            if (target == nullptr) {
-                send_message_to_user(client, "Usuário '" + parsed.destination + "' não encontrado.");
+        if (input.rfind("/create_private", 0) == 0) {
+            string room_name = input.substr(15);
+            if (room_name.empty()) {
+                string msg = "Uso: /create_private nome_sala\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
                 continue;
             }
 
-            // Adiciona mensagem ao histórico do remetente
-            ClientConnection* sender = find_client_by_socket(client.socket);
-            if (sender) {
-                sender->privateHistory[parsed.destination].addMessage(msg);
-            }
-
-            // Adiciona mensagem ao histórico do destinatário
-            target->privateHistory[client.name].addMessage(msg);
-
-            // Envia mensagem para o destinatário
-            send_message_to_user(*target, "[PRIVADA de " + client.name + "]: " + msg.content);
-            
-            // Confirma para o remetente
-            send_message_to_user(client, "[ENVIADA para " + parsed.destination + "]: " + msg.content);
-        }
-    }
-
-    // Cliente desconectou
-    closesocket(client.socket);
-
-    // Remove das conexões
-    {
-        lock_guard<mutex> lock(connections_mutex);
-        connections.erase(
-            remove_if(connections.begin(), connections.end(),
-                      [&](const ClientConnection &c) { return c.socket == client.socket; }),
-            connections.end());
-    }
-
-    // Remove do bloco de conexões
-    ConnectionsBlock::StringConnection conn_to_remove = {(long int)client.socket, 0, client.name};
-    connectionsBlock.removeConnection((int)client.socket);
-
-    cout << "Cliente desconectado: " << client.name << endl;
-
-    // Notifica outros usuários
-    {
-        lock_guard<mutex> lock(connections_mutex);
-        for (auto &conn : connections) {
-            send_message_to_user(conn, "[SISTEMA] " + client.name + " desconectou-se.");
-        }
-    }
-}
-
-// Função para definir nome do usuário
-string get_user_name(SOCKET client_socket) {
-    char buffer[BUFFER_SIZE];
-    string name_prompt = "Digite seu nome de usuário: ";
-    send(client_socket, name_prompt.c_str(), (int)name_prompt.size(), 0);
-
-    int bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-    if (bytes_read > 0) {
-        buffer[bytes_read] = '\0';
-        string name(buffer);
-        
-        // Remove quebras de linha
-        name.erase(remove(name.begin(), name.end(), '\n'), name.end());
-        name.erase(remove(name.begin(), name.end(), '\r'), name.end());
-        
-        // Verifica se o nome já existe
-        {
-            lock_guard<mutex> lock(connections_mutex);
-            for (const auto &conn : connections) {
-                if (conn.name == name) {
-                    string error_msg = "Nome já em uso. Conexão encerrada.\n";
-                    send(client_socket, error_msg.c_str(), (int)error_msg.size(), 0);
-                    return "";
+            {
+                lock_guard<mutex> lock(serverRooms_mutex);
+                if (serverRooms.count(room_name)) {
+                    string msg = "A sala '" + room_name + "' já existe.\n";
+                    send(client_socket, msg.c_str(), (int)msg.size(), 0);
+                    continue;
                 }
+
+                ServerBlock* newRoom = new ServerBlock(true);
+                serverRooms[room_name] = newRoom;
+                newRoom->add_client(client_socket, user_name);
             }
+
+            string msg = "Sala privada '" + room_name + "' criada e você foi adicionado.\n";
+            send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            continue;
         }
-        
-        return name;
+
+        else if (input.rfind("/join", 0) == 0) {
+            string room_name = input.substr(6);
+            if (room_name.empty()) {
+                string msg = "Uso: /join nome_sala\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+                continue;
+            }
+
+            lock_guard<mutex> lock(serverRooms_mutex);
+            auto it = serverRooms.find(room_name);
+            if (it == serverRooms.end()) {
+                string msg = "Sala '" + room_name + "' não existe.\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            } else {
+                ServerBlock* targetRoom = it->second;
+                targetRoom->add_client(client_socket, user_name);
+                string msg = "Você entrou na sala '" + room_name + "'. Use /use " + room_name + " para ativar.\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            }
+            continue;
+        }
+
+        else if (input.rfind("/use", 0) == 0) {
+            string room_name = input.substr(5);
+            lock_guard<mutex> lock(serverRooms_mutex);
+
+            if (room_name == "General" || room_name == "publico") {
+                currentRoom = serverRooms["publico"];
+                currentRoomName = "publico";
+                string msg = "Você voltou para o chat público.\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            } else if (serverRooms.count(room_name)) {
+                currentRoom = serverRooms[room_name];
+                currentRoomName = room_name;
+                string msg = "Agora você está usando o grupo '" + room_name + "'.\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            } else {
+                string msg = "A sala '" + room_name + "' não existe.\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            }
+            continue;
+        }
+
+        else if (input == "/leave") {
+            if (currentRoomName == "publico") {
+                string msg = "Você não pode sair do chat público.\n";
+                send(client_socket, msg.c_str(), (int)msg.size(), 0);
+                continue;
+            }
+
+            lock_guard<mutex> lock(serverRooms_mutex);
+            currentRoom->remove_client(client_socket);
+
+            currentRoom = serverRooms["publico"];
+            currentRoomName = "publico";
+            string msg = "Você saiu do grupo e voltou ao chat público.\n";
+            send(client_socket, msg.c_str(), (int)msg.size(), 0);
+            continue;
+        }
+
+        else if (input == "/list") {
+            string userList = currentRoom->list_users();
+            send(client_socket, userList.c_str(), (int)userList.size(), 0);
+            continue;
+        }
+
+        // -------------------- MENSAGENS NORMAIS --------------------
+
+        currentRoom->broadcast_message(
+            client_socket,
+            "[" + currentRoomName + "] " + user_name + ": " + input + "\n"
+        );
     }
-    
-    return "";
+
+    // desconectou
+    lock_guard<mutex> lock(serverRooms_mutex);
+    for (auto& [name, room] : serverRooms)
+        room->remove_client(client_socket);
+
+    closesocket(client_socket);
+    cout << user_name << " desconectou-se." << endl;
 }
 
-// Função principal do servidor
+// -------------------- MAIN --------------------
 int main() {
     if (!init_winsock()) {
-        cerr << "Erro ao inicializar Winsock" << endl;
+        cerr << "Erro ao inicializar Winsock." << endl;
         return 1;
     }
 
     SOCKET server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == INVALID_SOCKET) {
-        cerr << "Erro ao criar socket" << endl;
+        cerr << "Erro ao criar socket." << endl;
         cleanup_winsock();
         return 1;
     }
@@ -280,71 +204,32 @@ int main() {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    if (bind(server_fd, (sockaddr *)&address, sizeof(address)) == SOCKET_ERROR) {
-        cerr << "Erro no bind" << endl;
+    if (bind(server_fd, (sockaddr*)&address, sizeof(address)) == SOCKET_ERROR) {
+        cerr << "Erro no bind." << endl;
         closesocket(server_fd);
         cleanup_winsock();
         return 1;
     }
 
     if (listen(server_fd, 3) == SOCKET_ERROR) {
-        cerr << "Erro no listen" << endl;
+        cerr << "Erro no listen." << endl;
         closesocket(server_fd);
         cleanup_winsock();
         return 1;
     }
 
-    cout << "Servidor rodando na porta " << PORT << endl;
-    cout << "Aguardando conexões..." << endl;
+    cout << "Servidor principal rodando na porta " << PORT << endl;
+
+    // Cria sala pública principal
+    get_or_create_room("publico", false);
 
     while (true) {
         sockaddr_in client_addr;
         int addrlen = sizeof(client_addr);
-        SOCKET new_socket = accept(server_fd, (sockaddr *)&client_addr, &addrlen);
-        if (new_socket == INVALID_SOCKET) {
-            cerr << "Erro no accept" << endl;
-            continue;
-        }
+        SOCKET new_socket = accept(server_fd, (sockaddr*)&client_addr, &addrlen);
+        if (new_socket == INVALID_SOCKET) continue;
 
-        // Solicita nome do usuário
-        string user_name = get_user_name(new_socket);
-        if (user_name.empty()) {
-            closesocket(new_socket);
-            continue;
-        }
-
-        // Cria um cliente
-        ClientConnection client;
-        client.socket = new_socket;
-        client.name = user_name;
-
-        // Adiciona às conexões
-        {
-            lock_guard<mutex> lock(connections_mutex);
-            connections.push_back(client);
-        }
-
-        // Adiciona ao bloco de conexões
-        ConnectionsBlock::StringConnection conn = {
-            (long int)new_socket, 
-            (long int)client_addr.sin_addr.s_addr, 
-            user_name
-        };
-        connectionsBlock.addConnection(conn);
-
-        cout << "Novo cliente conectado: " << user_name << endl;
-
-        // Notifica outros usuários
-        {
-            lock_guard<mutex> lock(connections_mutex);
-            for (auto &conn : connections) {
-                if (conn.socket != new_socket) {
-                    send_message_to_user(conn, "[SISTEMA] " + user_name + " entrou no chat.");
-                }
-            }
-        }
-
-        thread(handle_client, client).detach();
+        thread(handle_client, new_socket, client_addr).detach();
     }
 
     closesocket(server_fd);
