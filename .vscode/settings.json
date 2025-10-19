@@ -51,12 +51,12 @@
         "typeinfo": "cpp",
         "variant": "cpp",
         "sstream": "cpp",
+        "mutex": "cpp",
         "xstring": "cpp",
         "cstring": "cpp",
         "ios": "cpp",
         "list": "cpp",
         "locale": "cpp",
-        "mutex": "cpp",
         "ratio": "cpp",
         "stop_token": "cpp",
         "thread": "cpp",
@@ -72,7 +72,9 @@
         "xloctime": "cpp",
         "xmemory": "cpp",
         "xtr1common": "cpp",
-        "xutility": "cpp"
-    },
-    "C_Cpp.dimInactiveRegions": true
+        "xutility": "cpp",
+        "chrono": "cpp",
+        "forward_list": "cpp",
+        "iomanip": "cpp"
+    }
 }
