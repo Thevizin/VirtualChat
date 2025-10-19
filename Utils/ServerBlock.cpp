@@ -81,6 +81,7 @@ string ServerBlock::list_users() {
 // ------------------------------------------------------------
 // Grupos (agora com unique_ptr)
 // ------------------------------------------------------------
+
 void ServerBlock::create_private_group(const string& group_name) {
     lock_guard<mutex> lock(connections_mutex);
     // verifica duplicado
@@ -199,7 +200,7 @@ void ServerBlock::handle_client(ClientConnection& client) {
             Group* newGroup = find_group_by_name(group_name);
             if (newGroup) {
                 newGroup->add_client(client.socket, client.name);
-                client.currentGroup = newGroup;
+                client.groups_joined[newGroup->get_name()] = newGroup;
                 send_message_to_user(client, "Grupo criado e voce entrou em " + group_name + ".\n");
             }
             continue;
@@ -216,7 +217,6 @@ void ServerBlock::handle_client(ClientConnection& client) {
 
             if (group_name == "General" || group_name == "global") {
                 if (client.currentGroup) {
-                    client.currentGroup->remove_client(client.socket);
                     client.currentGroup = nullptr;
                     send_message_to_user(client, "Voce voltou ao chat global.\n");
                 } else {
@@ -225,16 +225,12 @@ void ServerBlock::handle_client(ClientConnection& client) {
                 continue;
             }
 
-            Group* grp = find_group_by_name(group_name);
+            Group* grp = client.groups_joined[group_name];
             if (!grp) {
                 send_message_to_user(client, "Grupo nao encontrado.\n");
                 continue;
             }
 
-            if (client.currentGroup)
-                client.currentGroup->remove_client(client.socket);
-
-            grp->add_client(client.socket, client.name);
             client.currentGroup = grp;
             send_message_to_user(client, "Voce entrou no grupo " + group_name + ".\n");
             continue;
@@ -330,7 +326,7 @@ void ServerBlock::handle_client(ClientConnection& client) {
         if (client.currentGroup) {
             string msg = "[GRUPO " + client.currentGroup->get_name() + "] " + client.name + ": " + input + "\n";
             client.currentGroup->send_message(client.socket, msg);
-        } else {
+        } else if (client.currentGroup == nullptr) {
             string msg = "[GLOBAL] " + client.name + ": " + input + "\n";
             broadcast_message(client.socket, msg);
         }

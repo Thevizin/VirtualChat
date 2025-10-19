@@ -7,6 +7,7 @@
 #include "Group.h"
 #include <string>
 #include <vector>
+#include <map>
 #include <unordered_map>
 #include <winsock2.h>
 #include <mutex>
@@ -23,8 +24,10 @@ public:
     struct ClientConnection {
         SOCKET socket;
         std::string name;
+        std::map<std::string, Group*> groups_joined; // nomes dos grupos que o cliente entrou
         std::unordered_map<std::string, MessagesBlock> privateHistory;
         Group* currentGroup = nullptr; // grupo em que está (nullptr = global)
+        bool grouping = false; // está em um grupo?
     };
 
     using StringConnection = Connection<std::string>;
