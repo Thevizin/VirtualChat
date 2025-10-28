@@ -39,6 +39,7 @@ public:
 
     ClientConnection* get_last_client();
     void send_message_to_user(ClientConnection& client, const std::string& msg);
+    void send_message_to_group(ClientConnection& client, const std::string& msg);
     ClientConnection* find_client_by_name(const std::string& name);
     ClientConnection* find_client_by_socket(SOCKET socket);
     std::string list_connected_users();
@@ -48,6 +49,7 @@ public:
     void handle_client(ClientConnection& client);
     void remove_client(SOCKET client_socket);
     void broadcast_message(SOCKET sender_socket, const std::string& msg);
+    void group_message(ClientConnection &sender_socket, const std::string& msg);
     std::string get_name();
     void set_name(const std::string server_name);
 

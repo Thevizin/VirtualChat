@@ -44,6 +44,10 @@ void ServerBlock::send_message_to_user(ClientConnection& client, const string& m
     send(client.socket, msg.c_str(), (int)msg.size(), 0);
 }
 
+void ServerBlock::send_message_to_group(ClientConnection& client, const string& msg){
+    client.currentGroup->send_message(client.socket, msg);
+}
+
 ServerBlock::ClientConnection* ServerBlock::find_client_by_name(const string& name) {
     lock_guard<mutex> lock(connections_mutex);
     for (auto &c : clients)
@@ -197,6 +201,7 @@ void ServerBlock::handle_client(ClientConnection& client) {
 
             create_private_group(group_name);
             Group* newGroup = find_group_by_name(group_name);
+            std::cout << newGroup->get_name() << endl; 
             if (newGroup) {
                 newGroup->add_client(client.socket, client.name);
                 client.currentGroup = newGroup;
@@ -329,7 +334,8 @@ void ServerBlock::handle_client(ClientConnection& client) {
         // ---------------- Mensagem normal ----------------
         if (client.currentGroup) {
             string msg = "[GRUPO " + client.currentGroup->get_name() + "] " + client.name + ": " + input + "\n";
-            client.currentGroup->send_message(client.socket, msg);
+            //client.currentGroup->send_message(client.socket, msg);
+            group_message(client, msg);
         } else {
             string msg = "[GLOBAL] " + client.name + ": " + input + "\n";
             broadcast_message(client.socket, msg);
@@ -370,11 +376,30 @@ void ServerBlock::broadcast_message(SOCKET sender_socket, const string& msg) {
             send_message_to_user(c, msg);
 }
 
+//NOTE: TESTE
+void ServerBlock::group_message(ClientConnection &sender_socket, const string& msg){
+    lock_guard<mutex> lock(connections_mutex);
+
+   send_message_to_group(sender_socket, msg);
+
+    /*
+    for (auto &c : clients){
+        if (c.socket != sender_socket.socket){
+            if(c.currentGroup != nullptr){
+                if(c.currentGroup->get_name() == sender_socket.currentGroup->get_name()){
+                    
+                }
+            }    
+        }         
+    }
+        */  
+}
+
 string ServerBlock::get_user_name(SOCKET client_socket) {
     char buffer[BUFFER_SIZE];
     string prompt = "Digite seu nome de usuario: ";
     send(client_socket, prompt.c_str(), (int)prompt.size(), 0);
-
+    
     int bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
     if (bytes_read <= 0) return "";
 

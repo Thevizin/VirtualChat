@@ -56,6 +56,22 @@ int main() {
     ServerBlock mainServer(false); // false = servidor público
     vector<unique_ptr<ServerBlock>> privateServers;
 
+    //Adicionando dois clientes por por enquanto, está dando erro nos dois primeiros
+
+    /*
+    {
+        string usr_1 = "Vazio 1";  sockaddr_in sock_usr_1{}; int addrlen_1 = sizeof(sock_usr_1);
+        string usr_2 = "Vazio 2";  sockaddr_in sock_usr_2{}; int addrlen_2 = sizeof(sock_usr_2);
+
+        SOCKET s_usr_1, s_usr_2;
+        s_usr_1 = accept(server_fd, (sockaddr*)&sock_usr_1, &addrlen_1);
+        s_usr_2 = accept(server_fd, (sockaddr*)&sock_usr_2, &addrlen_1);
+
+        mainServer.add_client(s_usr_1, usr_1);
+        mainServer.add_client(s_usr_2, usr_2);
+    }
+        */
+
     // Thread que aceita novas conexões
     thread thread_accept([&]() {
         while (true) {

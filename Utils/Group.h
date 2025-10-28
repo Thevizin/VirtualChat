@@ -32,6 +32,7 @@ class Group {
         void add_client(SOCKET client_socket, const std::string& name);
         void remove_client(SOCKET client_socket);
         std::string list_connected_users();
+        std::vector<ClientConnection> get_users();
         std::string get_name();
         void set_name(const std::string& group_name);
         // envia mensagem de um usuário para todos no grupo (exceto o remetente)
